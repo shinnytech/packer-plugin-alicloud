@@ -161,6 +161,7 @@ type AlicloudImageConfig struct {
 	// will allow you to create those programatically.
 	AlicloudImageTag    config.KeyValues `mapstructure:"tag" required:"false"`
 	AlicloudDiskDevices `mapstructure:",squash"`
+	SkipIfExists        bool `mapstructure:"skip_if_exists" required:"false"`
 }
 
 func (c *AlicloudImageConfig) Prepare(ctx *interpolate.Context) []error {

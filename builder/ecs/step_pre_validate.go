@@ -81,7 +81,7 @@ func (s *stepPreValidate) validateDestImageName(state multistep.StateBag) error 
 
 	images := imagesResponse.Images.Image
 	if len(images) > 0 {
-		return fmt.Errorf("Error: Image Name: '%s' is used by an existing alicloud image: %s", images[0].ImageName, images[0].ImageId)
+		return fmt.Errorf("Error: Image Name: '%s' exists", s.AlicloudDestImageName)
 	}
 
 	return nil

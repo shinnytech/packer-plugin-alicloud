@@ -232,6 +232,10 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 
 	// If there was an error, return that
 	if rawErr, ok := state.GetOk("error"); ok {
+		if b.config.SkipIfExists && rawErr.(error) == fmt.Errorf("Error: Image Name: '%s' exists", b.config.AlicloudImageName) {
+			ui.Say("Image exists, Skipping...")
+			return nil, nil
+		}
 		return nil, rawErr.(error)
 	}
 
