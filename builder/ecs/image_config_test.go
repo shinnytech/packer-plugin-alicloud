@@ -4,6 +4,7 @@
 package ecs
 
 import (
+	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	"testing"
 )
 
@@ -58,5 +59,15 @@ func TestECSImageConfigPrepare_imageTags(t *testing.T) {
 			"TagKey1": "TagValue1",
 			"TagKey2": "TagValue2",
 		}, c.AlicloudImageTags)
+	}
+}
+
+func TestSkipIfExists(t *testing.T) {
+	state := new(multistep.BasicStateBag)
+	state.Put("error", ImageExistsError)
+	if rawErr, ok := state.GetOk("error"); ok {
+		if rawErr.(error) != ImageExistsError {
+			t.Fatalf("shouldn't have err:%v", rawErr.(error))
+		}
 	}
 }
