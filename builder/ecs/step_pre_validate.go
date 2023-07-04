@@ -17,6 +17,8 @@ type stepPreValidate struct {
 	ForceDelete           bool
 }
 
+var ImageExistsError = fmt.Errorf("Image name has exists")
+
 func (s *stepPreValidate) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	if err := s.validateRegions(state); err != nil {
 		return halt(state, err, "")
@@ -81,7 +83,7 @@ func (s *stepPreValidate) validateDestImageName(state multistep.StateBag) error 
 
 	images := imagesResponse.Images.Image
 	if len(images) > 0 {
-		return fmt.Errorf("Error: Image Name: '%s' exists", s.AlicloudDestImageName)
+		return ImageExistsError
 	}
 
 	return nil

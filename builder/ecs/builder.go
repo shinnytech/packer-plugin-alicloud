@@ -9,6 +9,7 @@ package ecs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hashicorp/hcl/v2/hcldec"
@@ -232,7 +233,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 
 	// If there was an error, return that
 	if rawErr, ok := state.GetOk("error"); ok {
-		if b.config.SkipIfExists && rawErr.(error) == fmt.Errorf("Error: Image Name: '%s' exists", b.config.AlicloudImageName) {
+		if b.config.SkipIfExists && errors.Is(rawErr.(error), ImageExistsError) {
 			ui.Say("Image exists, Skipping...")
 			return nil, nil
 		}
