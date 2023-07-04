@@ -4,8 +4,9 @@
 package ecs
 
 import (
-	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	"testing"
+
+	"github.com/hashicorp/packer-plugin-sdk/multistep"
 )
 
 func testAlicloudImageConfig() *AlicloudImageConfig {
