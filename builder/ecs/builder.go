@@ -87,6 +87,9 @@ func (b *Builder) Prepare(raws ...interface{}) ([]string, []string, error) {
 func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook) (packersdk.Artifact, error) {
 
 	client, err := b.config.Client()
+	if err != nil {
+		return nil, err
+	}
 	vpcClient, err := b.config.VPCClient()
 	if err != nil {
 		return nil, err
