@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
+
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/responses"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
@@ -36,31 +38,10 @@ var deleteVSwitchRetryErrors = []string{
 
 func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	client := state.Get("client").(*ClientWrapper)
+	vpcClient := state.Get("vpcClient").(*VPCClientWrapper)
 	ui := state.Get("ui").(packersdk.Ui)
 	vpcId := state.Get("vpcid").(string)
 	config := state.Get("config").(*Config)
-
-	if len(s.VSwitchId) != 0 {
-		describeVSwitchesRequest := ecs.CreateDescribeVSwitchesRequest()
-		describeVSwitchesRequest.VpcId = vpcId
-		describeVSwitchesRequest.VSwitchId = s.VSwitchId
-		describeVSwitchesRequest.ZoneId = s.ZoneId
-
-		vswitchesResponse, err := client.DescribeVSwitches(describeVSwitchesRequest)
-		if err != nil {
-			return halt(state, err, "Failed querying vswitch")
-		}
-
-		vswitch := vswitchesResponse.VSwitches.VSwitch
-		if len(vswitch) > 0 {
-			state.Put("vswitchid", vswitch[0].VSwitchId)
-			s.isCreate = false
-			return multistep.ActionContinue
-		}
-
-		s.isCreate = false
-		return halt(state, fmt.Errorf("The specified vswitch {%s} doesn't exist.", s.VSwitchId), "")
-	}
 
 	if s.ZoneId == "" {
 		describeZonesRequest := ecs.CreateDescribeZonesRequest()
@@ -111,6 +92,29 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 				return multistep.ActionHalt
 			}
 		}
+	}
+
+	if len(s.VSwitchId) != 0 || len(s.VSwitchName) != 0 {
+		describeVSwitchesRequest := vpc.CreateDescribeVSwitchesRequest()
+		describeVSwitchesRequest.VpcId = vpcId
+		describeVSwitchesRequest.VSwitchId = s.VSwitchId
+		describeVSwitchesRequest.VSwitchName = s.VSwitchName
+		describeVSwitchesRequest.ZoneId = s.ZoneId
+
+		vswitchesResponse, err := vpcClient.DescribeVSwitches(describeVSwitchesRequest)
+		if err != nil {
+			return halt(state, err, "Failed querying vswitch")
+		}
+
+		vswitch := vswitchesResponse.VSwitches.VSwitch
+		if len(vswitch) > 0 {
+			state.Put("vswitchid", vswitch[0].VSwitchId)
+			s.isCreate = false
+			return multistep.ActionContinue
+		}
+
+		s.isCreate = false
+		return halt(state, fmt.Errorf("The specified vswitch {%s} doesn't exist.", s.VSwitchId), "")
 	}
 
 	if config.CidrBlock == "" {

@@ -49,6 +49,7 @@ type FlatConfig struct {
 	AlicloudImageTag                  []config.FlatKeyValue        `mapstructure:"tag" required:"false" cty:"tag" hcl:"tag"`
 	ECSSystemDiskMapping              *ecs.FlatAlicloudDiskDevice  `mapstructure:"system_disk_mapping" required:"false" cty:"system_disk_mapping" hcl:"system_disk_mapping"`
 	ECSImagesDiskMappings             []ecs.FlatAlicloudDiskDevice `mapstructure:"image_disk_mappings" required:"false" cty:"image_disk_mappings" hcl:"image_disk_mappings"`
+	SkipIfExists                      *bool                        `mapstructure:"skip_if_exists" required:"false" cty:"skip_if_exists" hcl:"skip_if_exists"`
 	AssociatePublicIpAddress          *bool                        `mapstructure:"associate_public_ip_address" cty:"associate_public_ip_address" hcl:"associate_public_ip_address"`
 	ZoneId                            *string                      `mapstructure:"zone_id" required:"false" cty:"zone_id" hcl:"zone_id"`
 	IOOptimized                       *bool                        `mapstructure:"io_optimized" required:"false" cty:"io_optimized" hcl:"io_optimized"`
@@ -185,6 +186,7 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"tag":                              &hcldec.BlockListSpec{TypeName: "tag", Nested: hcldec.ObjectSpec((*config.FlatKeyValue)(nil).HCL2Spec())},
 		"system_disk_mapping":              &hcldec.BlockSpec{TypeName: "system_disk_mapping", Nested: hcldec.ObjectSpec((*ecs.FlatAlicloudDiskDevice)(nil).HCL2Spec())},
 		"image_disk_mappings":              &hcldec.BlockListSpec{TypeName: "image_disk_mappings", Nested: hcldec.ObjectSpec((*ecs.FlatAlicloudDiskDevice)(nil).HCL2Spec())},
+		"skip_if_exists":                   &hcldec.AttrSpec{Name: "skip_if_exists", Type: cty.Bool, Required: false},
 		"associate_public_ip_address":      &hcldec.AttrSpec{Name: "associate_public_ip_address", Type: cty.Bool, Required: false},
 		"zone_id":                          &hcldec.AttrSpec{Name: "zone_id", Type: cty.String, Required: false},
 		"io_optimized":                     &hcldec.AttrSpec{Name: "io_optimized", Type: cty.Bool, Required: false},

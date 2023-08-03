@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
+
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/endpoints"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 	"github.com/hashicorp/packer-plugin-alicloud/version"
@@ -56,7 +58,8 @@ type AlicloudAccessConfig struct {
 	// compatible with aliyun ECS. Specify another endpoint with this option.
 	CustomEndpointEcs string `mapstructure:"custom_endpoint_ecs" required:"false"`
 
-	client *ClientWrapper
+	client    *ClientWrapper
+	vpcClient *VPCClientWrapper
 }
 
 const Packer = "HashiCorp-Packer"
@@ -122,6 +125,68 @@ func (c *AlicloudAccessConfig) Client() (*ClientWrapper, error) {
 	c.client = &ClientWrapper{client}
 
 	return c.client, nil
+}
+
+// Client for AliVPCClient
+func (c *AlicloudAccessConfig) VPCClient() (*VPCClientWrapper, error) {
+	var client *vpc.Client
+	var err error
+	if c.vpcClient != nil {
+		return c.vpcClient, nil
+	}
+	if c.SecurityToken == "" {
+		c.SecurityToken = os.Getenv("SECURITY_TOKEN")
+	}
+
+	var getProviderConfig = func(str string, key string) string {
+		value, err := getConfigFromProfile(c, key)
+		if err == nil && value != nil {
+			str = value.(string)
+		}
+		return str
+	}
+
+	c.AlicloudRegion = getProviderConfig(c.AlicloudRegion, "region_id")
+	c.SecurityToken = getProviderConfig(c.SecurityToken, "sts_token")
+	c.CustomEndpointEcs = getProviderConfig(c.CustomEndpointEcs, "endpoint")
+
+	if c.CustomEndpointEcs != "" && c.AlicloudRegion != "" {
+		_ = endpoints.AddEndpointMapping(c.AlicloudRegion, "Ecs", c.CustomEndpointEcs)
+	}
+
+	if c.AlicloudRamRole == "" {
+		c.AlicloudRamRole = getProviderConfig(c.AlicloudRamRole, "ram_role_name")
+	}
+
+	if c.AlicloudAccessKey == "" || c.AlicloudSecretKey == "" {
+		c.AlicloudAccessKey = getProviderConfig(c.AlicloudAccessKey, "access_key_id")
+		c.AlicloudSecretKey = getProviderConfig(c.AlicloudSecretKey, "access_key_secret")
+	}
+
+	if c.AlicloudRamRoleArn == "" || c.AlicloudRamSessionName == "" {
+		c.AlicloudRamRoleArn = getProviderConfig(c.AlicloudRamRole, "ram_role_arn")
+		c.AlicloudRamSessionName = getProviderConfig(c.AlicloudRamSessionName, "ram_session_name")
+	}
+
+	if c.AlicloudRamRole != "" {
+		client, err = vpc.NewClientWithEcsRamRole(c.AlicloudRegion, c.AlicloudRamRole)
+	} else if c.AlicloudRamRoleArn != "" && c.AlicloudRamSessionName != "" {
+		client, err = vpc.NewClientWithRamRoleArn(
+			c.AlicloudRegion, c.AlicloudAccessKey,
+			c.AlicloudSecretKey, c.AlicloudRamRoleArn, c.AlicloudRamSessionName)
+	} else {
+		client, err = vpc.NewClientWithStsToken(c.AlicloudRegion, c.AlicloudAccessKey, c.AlicloudSecretKey, c.SecurityToken)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	client.AppendUserAgent(Packer, version.PluginVersion.FormattedVersion())
+	client.SetReadTimeout(DefaultRequestReadTimeout)
+	c.vpcClient = &VPCClientWrapper{client}
+
+	return c.vpcClient, nil
 }
 
 func (c *AlicloudAccessConfig) Prepare(ctx *interpolate.Context) []error {

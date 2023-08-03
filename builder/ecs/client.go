@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
+
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/errors"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/responses"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
@@ -14,6 +16,10 @@ import (
 
 type ClientWrapper struct {
 	*ecs.Client
+}
+
+type VPCClientWrapper struct {
+	*vpc.Client
 }
 
 const (
