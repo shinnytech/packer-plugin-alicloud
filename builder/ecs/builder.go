@@ -87,12 +87,14 @@ func (b *Builder) Prepare(raws ...interface{}) ([]string, []string, error) {
 func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook) (packersdk.Artifact, error) {
 
 	client, err := b.config.Client()
+	vpcClient, err := b.config.VPCClient()
 	if err != nil {
 		return nil, err
 	}
 	state := new(multistep.BasicStateBag)
 	state.Put("config", &b.config)
 	state.Put("client", client)
+	state.Put("vpcClient", vpcClient)
 	state.Put("hook", hook)
 	state.Put("ui", ui)
 	state.Put("networktype", b.chooseNetworkType())
