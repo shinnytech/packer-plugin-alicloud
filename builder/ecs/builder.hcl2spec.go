@@ -78,7 +78,6 @@ type FlatConfig struct {
 	AlicloudImageDestinationNames     []string                 `mapstructure:"image_copy_names" required:"false" cty:"image_copy_names" hcl:"image_copy_names"`
 	ImageEncrypted                    *bool                    `mapstructure:"image_encrypted" required:"false" cty:"image_encrypted" hcl:"image_encrypted"`
 	AlicloudImageForceDelete          *bool                    `mapstructure:"image_force_delete" required:"false" cty:"image_force_delete" hcl:"image_force_delete"`
-	SkipIfExists                      *bool                    `mapstructure:"skip_if_exists" cty:"skip_if_exists" hcl:"skip_if_exists"`
 	AlicloudImageForceDeleteSnapshots *bool                    `mapstructure:"image_force_delete_snapshots" required:"false" cty:"image_force_delete_snapshots" hcl:"image_force_delete_snapshots"`
 	AlicloudImageForceDeleteInstances *bool                    `mapstructure:"image_force_delete_instances" cty:"image_force_delete_instances" hcl:"image_force_delete_instances"`
 	AlicloudImageIgnoreDataDisks      *bool                    `mapstructure:"image_ignore_data_disks" required:"false" cty:"image_ignore_data_disks" hcl:"image_ignore_data_disks"`
@@ -86,6 +85,7 @@ type FlatConfig struct {
 	AlicloudImageTag                  []config.FlatKeyValue    `mapstructure:"tag" required:"false" cty:"tag" hcl:"tag"`
 	ECSSystemDiskMapping              *FlatAlicloudDiskDevice  `mapstructure:"system_disk_mapping" required:"false" cty:"system_disk_mapping" hcl:"system_disk_mapping"`
 	ECSImagesDiskMappings             []FlatAlicloudDiskDevice `mapstructure:"image_disk_mappings" required:"false" cty:"image_disk_mappings" hcl:"image_disk_mappings"`
+	SkipIfExists                      *bool                    `mapstructure:"skip_if_exists" required:"false" cty:"skip_if_exists" hcl:"skip_if_exists"`
 	AssociatePublicIpAddress          *bool                    `mapstructure:"associate_public_ip_address" cty:"associate_public_ip_address" hcl:"associate_public_ip_address"`
 	ZoneId                            *string                  `mapstructure:"zone_id" required:"false" cty:"zone_id" hcl:"zone_id"`
 	IOOptimized                       *bool                    `mapstructure:"io_optimized" required:"false" cty:"io_optimized" hcl:"io_optimized"`
@@ -207,7 +207,6 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"image_copy_names":                 &hcldec.AttrSpec{Name: "image_copy_names", Type: cty.List(cty.String), Required: false},
 		"image_encrypted":                  &hcldec.AttrSpec{Name: "image_encrypted", Type: cty.Bool, Required: false},
 		"image_force_delete":               &hcldec.AttrSpec{Name: "image_force_delete", Type: cty.Bool, Required: false},
-		"skip_if_exists":                   &hcldec.AttrSpec{Name: "skip_if_exists", Type: cty.Bool, Required: false},
 		"image_force_delete_snapshots":     &hcldec.AttrSpec{Name: "image_force_delete_snapshots", Type: cty.Bool, Required: false},
 		"image_force_delete_instances":     &hcldec.AttrSpec{Name: "image_force_delete_instances", Type: cty.Bool, Required: false},
 		"image_ignore_data_disks":          &hcldec.AttrSpec{Name: "image_ignore_data_disks", Type: cty.Bool, Required: false},
@@ -215,6 +214,7 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"tag":                              &hcldec.BlockListSpec{TypeName: "tag", Nested: hcldec.ObjectSpec((*config.FlatKeyValue)(nil).HCL2Spec())},
 		"system_disk_mapping":              &hcldec.BlockSpec{TypeName: "system_disk_mapping", Nested: hcldec.ObjectSpec((*FlatAlicloudDiskDevice)(nil).HCL2Spec())},
 		"image_disk_mappings":              &hcldec.BlockListSpec{TypeName: "image_disk_mappings", Nested: hcldec.ObjectSpec((*FlatAlicloudDiskDevice)(nil).HCL2Spec())},
+		"skip_if_exists":                   &hcldec.AttrSpec{Name: "skip_if_exists", Type: cty.Bool, Required: false},
 		"associate_public_ip_address":      &hcldec.AttrSpec{Name: "associate_public_ip_address", Type: cty.Bool, Required: false},
 		"zone_id":                          &hcldec.AttrSpec{Name: "zone_id", Type: cty.String, Required: false},
 		"io_optimized":                     &hcldec.AttrSpec{Name: "io_optimized", Type: cty.Bool, Required: false},
