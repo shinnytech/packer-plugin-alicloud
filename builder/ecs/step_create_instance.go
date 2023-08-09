@@ -94,6 +94,7 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 			}
 			for _, instanceType := range createInstanceResponse.(*ecs.DescribeRecommendInstanceTypeResponse).Data.RecommendInstanceType {
 				s.ZoneId = instanceType.ZoneId
+				ui.Say(fmt.Sprintf("Instance type %s is not available in zone %s, try to use %s", s.InstanceType, config.ZoneId, s.ZoneId))
 				steps := []multistep.Step{
 					&stepConfigAlicloudVSwitch{
 						VSwitchId:   config.VSwitchId,
@@ -120,7 +121,9 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 				}
 				runner := commonsteps.NewRunner(steps, config.PackerConfig, ui)
 				runner.Run(ctx, state)
+				config.ZoneId = s.ZoneId
 				s.instance = state.Get("instance").(*ecs.Instance)
+				return multistep.ActionContinue
 			}
 		}
 		return halt(state, err, "Error creating instance")
