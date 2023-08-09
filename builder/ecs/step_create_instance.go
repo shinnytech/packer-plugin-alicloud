@@ -70,7 +70,7 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 		// 根据错误码判断是否是库存不足的错误
 		// 如果是库存不足的错误，查询可用区后换区重试
 		e, ok := err.(errors.Error)
-		if !ok || e.ErrorCode() != "OperationDenied.NoStock" {
+		if ok && e.ErrorCode() == "OperationDenied.NoStock" {
 			config := state.Get("config").(*Config)
 			newReq := ecs.CreateDescribeRecommendInstanceTypeRequest()
 			newReq.RegionId = s.RegionId
