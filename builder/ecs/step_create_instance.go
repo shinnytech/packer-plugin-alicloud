@@ -7,10 +7,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/errors"
-	"github.com/hashicorp/packer-plugin-sdk/multistep/commonsteps"
 	"io/ioutil"
 	"strconv"
+
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/errors"
+	"github.com/hashicorp/packer-plugin-sdk/multistep/commonsteps"
 
 	"github.com/hashicorp/packer-plugin-sdk/uuid"
 
