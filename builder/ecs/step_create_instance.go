@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/errors"
+	"github.com/hashicorp/packer-plugin-sdk/multistep/commonsteps"
 	"io/ioutil"
 	"strconv"
 
@@ -35,6 +37,7 @@ type stepCreateAlicloudInstance struct {
 	SecurityEnhancementStrategy string
 	AlicloudImageFamily         string
 	instance                    *ecs.Instance
+	NoCleanUp                   bool
 }
 
 var createInstanceRetryErrors = []string{
@@ -63,6 +66,63 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 	})
 
 	if err != nil {
+		// 根据错误码判断是否是库存不足的错误
+		// 如果是库存不足的错误，查询可用区后换区重试
+		e, ok := err.(errors.Error)
+		if !ok || e.ErrorCode() != "OperationDenied.NoStock" {
+			config := state.Get("config").(*Config)
+			newReq := ecs.CreateDescribeRecommendInstanceTypeRequest()
+			newReq.RegionId = s.RegionId
+			newReq.NetworkType = "vpc"
+			newReq.InstanceChargeType = "PostPaid"
+			newReq.SystemDiskCategory = "cloud_essd"
+			newReq.InstanceType = s.InstanceType
+			newReq.IoOptimized = "optimized"
+			newReq.PriorityStrategy = "PriceFirst"
+			newReq.InstanceChargeType = "PostPaid"
+			newReq.Scene = "CREATE"
+			newReq.SpotStrategy = "NoSpot"
+
+			createInstanceResponse, err := client.WaitForExpected(&WaitForExpectArgs{
+				RequestFunc: func() (responses.AcsResponse, error) {
+					return client.DescribeRecommendInstanceType(newReq)
+				},
+				EvalFunc: client.EvalCouldRetryResponse(createInstanceRetryErrors, EvalRetryErrorType),
+			})
+			if err != nil {
+				return halt(state, err, "Error auto re-arrange instance zone")
+			}
+			for _, instanceType := range createInstanceResponse.(*ecs.DescribeRecommendInstanceTypeResponse).Data.RecommendInstanceType {
+				s.ZoneId = instanceType.ZoneId
+				steps := []multistep.Step{
+					&stepConfigAlicloudVSwitch{
+						VSwitchId:   config.VSwitchId,
+						ZoneId:      s.ZoneId,
+						CidrBlock:   config.CidrBlock,
+						VSwitchName: config.VSwitchName,
+					},
+					&stepCreateAlicloudInstance{
+						IOOptimized:                 config.IOOptimized,
+						InstanceType:                config.InstanceType,
+						UserData:                    config.UserData,
+						UserDataFile:                config.UserDataFile,
+						RamRoleName:                 config.RamRoleName,
+						Tags:                        config.RunTags,
+						RegionId:                    config.AlicloudRegion,
+						InternetChargeType:          config.InternetChargeType,
+						InternetMaxBandwidthOut:     config.InternetMaxBandwidthOut,
+						InstanceName:                config.InstanceName,
+						ZoneId:                      s.ZoneId,
+						SecurityEnhancementStrategy: config.SecurityEnhancementStrategy,
+						AlicloudImageFamily:         config.AlicloudImageFamily,
+						NoCleanUp:                   true,
+					},
+				}
+				runner := commonsteps.NewRunner(steps, config.PackerConfig, ui)
+				runner.Run(ctx, state)
+				s.instance = state.Get("instance").(*ecs.Instance)
+			}
+		}
 		return halt(state, err, "Error creating instance")
 	}
 
