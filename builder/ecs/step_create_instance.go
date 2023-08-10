@@ -11,8 +11,6 @@ import (
 	"strconv"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/errors"
-	"github.com/hashicorp/packer-plugin-sdk/multistep/commonsteps"
-
 	"github.com/hashicorp/packer-plugin-sdk/uuid"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
@@ -38,7 +36,6 @@ type stepCreateAlicloudInstance struct {
 	SecurityEnhancementStrategy string
 	AlicloudImageFamily         string
 	instance                    *ecs.Instance
-	NoCleanUp                   bool
 }
 
 var createInstanceRetryErrors = []string{
@@ -96,32 +93,30 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 			for _, instanceType := range createInstanceResponse.(*ecs.DescribeRecommendInstanceTypeResponse).Data.RecommendInstanceType {
 				s.ZoneId = instanceType.ZoneId
 				ui.Say(fmt.Sprintf("Instance type %s is not available in zone %s, try to use %s", s.InstanceType, config.ZoneId, s.ZoneId))
-				steps := []multistep.Step{
-					&stepConfigAlicloudVSwitch{
-						VSwitchId:   config.VSwitchId,
-						ZoneId:      s.ZoneId,
-						CidrBlock:   config.CidrBlock,
-						VSwitchName: config.VSwitchName,
-					},
-					&stepCreateAlicloudInstance{
-						IOOptimized:                 config.IOOptimized,
-						InstanceType:                config.InstanceType,
-						UserData:                    config.UserData,
-						UserDataFile:                config.UserDataFile,
-						RamRoleName:                 config.RamRoleName,
-						Tags:                        config.RunTags,
-						RegionId:                    config.AlicloudRegion,
-						InternetChargeType:          config.InternetChargeType,
-						InternetMaxBandwidthOut:     config.InternetMaxBandwidthOut,
-						InstanceName:                config.InstanceName,
-						ZoneId:                      s.ZoneId,
-						SecurityEnhancementStrategy: config.SecurityEnhancementStrategy,
-						AlicloudImageFamily:         config.AlicloudImageFamily,
-						NoCleanUp:                   true,
-					},
+				chooseVSwitch := stepConfigAlicloudVSwitch{
+					VSwitchId:   config.VSwitchId,
+					ZoneId:      s.ZoneId,
+					CidrBlock:   config.CidrBlock,
+					VSwitchName: config.VSwitchName,
 				}
-				runner := commonsteps.NewRunner(steps, config.PackerConfig, ui)
-				runner.Run(ctx, state)
+				// 目前采用预创建VSwitch的方式，所以无需考虑cleanup的问题
+				chooseVSwitch.Run(ctx, state)
+				reCreateInstance := stepCreateAlicloudInstance{
+					IOOptimized:                 config.IOOptimized,
+					InstanceType:                config.InstanceType,
+					UserData:                    config.UserData,
+					UserDataFile:                config.UserDataFile,
+					RamRoleName:                 config.RamRoleName,
+					Tags:                        config.RunTags,
+					RegionId:                    config.AlicloudRegion,
+					InternetChargeType:          config.InternetChargeType,
+					InternetMaxBandwidthOut:     config.InternetMaxBandwidthOut,
+					InstanceName:                config.InstanceName,
+					ZoneId:                      s.ZoneId,
+					SecurityEnhancementStrategy: config.SecurityEnhancementStrategy,
+					AlicloudImageFamily:         config.AlicloudImageFamily,
+				}
+				reCreateInstance.Run(ctx, state)
 				config.ZoneId = s.ZoneId
 				s.instance = state.Get("instance").(*ecs.Instance)
 				return multistep.ActionContinue
