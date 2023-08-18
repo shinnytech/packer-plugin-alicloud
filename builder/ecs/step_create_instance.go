@@ -69,57 +69,59 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 		e, ok := err.(errors.Error)
 		if ok && e.ErrorCode() == "OperationDenied.NoStock" {
 			config := state.Get("config").(*Config)
-			newReq := ecs.CreateDescribeRecommendInstanceTypeRequest()
+			newReq := ecs.CreateDescribeAvailableResourceRequest()
 			newReq.RegionId = s.RegionId
-			newReq.NetworkType = "vpc"
+			newReq.NetworkCategory = "vpc"
 			newReq.InstanceChargeType = "PostPaid"
 			newReq.SystemDiskCategory = "cloud_essd"
 			newReq.InstanceType = s.InstanceType
 			newReq.IoOptimized = "optimized"
-			newReq.PriorityStrategy = "PriceFirst"
 			newReq.InstanceChargeType = "PostPaid"
-			newReq.Scene = "CREATE"
+			newReq.ResourceType = "instance"
 			newReq.SpotStrategy = "NoSpot"
+			newReq.DestinationResource = "InstanceType"
 
-			createInstanceResponse, err := client.WaitForExpected(&WaitForExpectArgs{
+			describeResourceResponse, err := client.WaitForExpected(&WaitForExpectArgs{
 				RequestFunc: func() (responses.AcsResponse, error) {
-					return client.DescribeRecommendInstanceType(newReq)
+					return client.DescribeAvailableResource(newReq)
 				},
 				EvalFunc: client.EvalCouldRetryResponse(createInstanceRetryErrors, EvalRetryErrorType),
 			})
 			if err != nil {
 				return halt(state, err, "Error auto re-arrange instance zone")
 			}
-			for _, instanceType := range createInstanceResponse.(*ecs.DescribeRecommendInstanceTypeResponse).Data.RecommendInstanceType {
-				s.ZoneId = instanceType.ZoneId
-				ui.Say(fmt.Sprintf("Instance type %s is not available in zone %s, try to use %s", s.InstanceType, config.ZoneId, s.ZoneId))
-				chooseVSwitch := stepConfigAlicloudVSwitch{
-					VSwitchId:   config.VSwitchId,
-					ZoneId:      s.ZoneId,
-					CidrBlock:   config.CidrBlock,
-					VSwitchName: config.VSwitchName,
+			for _, availableZone := range describeResourceResponse.(*ecs.DescribeAvailableResourceResponse).AvailableZones.AvailableZone {
+				if availableZone.Status == "Available" && availableZone.AvailableResources.AvailableResource[0].SupportedResources.SupportedResource[0].Status == "Available" {
+					s.ZoneId = availableZone.ZoneId
+					ui.Say(fmt.Sprintf("Instance type %s is not available in zone %s, try to use %s", s.InstanceType, config.ZoneId, s.ZoneId))
+					chooseVSwitch := stepConfigAlicloudVSwitch{
+						VSwitchId:   config.VSwitchId,
+						ZoneId:      s.ZoneId,
+						CidrBlock:   config.CidrBlock,
+						VSwitchName: config.VSwitchName,
+					}
+					// 目前采用预创建VSwitch的方式，所以无需考虑cleanup的问题
+					chooseVSwitch.Run(ctx, state)
+					reCreateInstance := stepCreateAlicloudInstance{
+						IOOptimized:                 config.IOOptimized,
+						InstanceType:                config.InstanceType,
+						UserData:                    config.UserData,
+						UserDataFile:                config.UserDataFile,
+						RamRoleName:                 config.RamRoleName,
+						Tags:                        config.RunTags,
+						RegionId:                    config.AlicloudRegion,
+						InternetChargeType:          config.InternetChargeType,
+						InternetMaxBandwidthOut:     config.InternetMaxBandwidthOut,
+						InstanceName:                config.InstanceName,
+						ZoneId:                      s.ZoneId,
+						SecurityEnhancementStrategy: config.SecurityEnhancementStrategy,
+						AlicloudImageFamily:         config.AlicloudImageFamily,
+					}
+					reCreateInstance.Run(ctx, state)
+					config.ZoneId = s.ZoneId
+					s.instance = state.Get("instance").(*ecs.Instance)
+					return multistep.ActionContinue
 				}
-				// 目前采用预创建VSwitch的方式，所以无需考虑cleanup的问题
-				chooseVSwitch.Run(ctx, state)
-				reCreateInstance := stepCreateAlicloudInstance{
-					IOOptimized:                 config.IOOptimized,
-					InstanceType:                config.InstanceType,
-					UserData:                    config.UserData,
-					UserDataFile:                config.UserDataFile,
-					RamRoleName:                 config.RamRoleName,
-					Tags:                        config.RunTags,
-					RegionId:                    config.AlicloudRegion,
-					InternetChargeType:          config.InternetChargeType,
-					InternetMaxBandwidthOut:     config.InternetMaxBandwidthOut,
-					InstanceName:                config.InstanceName,
-					ZoneId:                      s.ZoneId,
-					SecurityEnhancementStrategy: config.SecurityEnhancementStrategy,
-					AlicloudImageFamily:         config.AlicloudImageFamily,
-				}
-				reCreateInstance.Run(ctx, state)
-				config.ZoneId = s.ZoneId
-				s.instance = state.Get("instance").(*ecs.Instance)
-				return multistep.ActionContinue
 			}
 		}
 		return halt(state, err, "Error creating instance")
