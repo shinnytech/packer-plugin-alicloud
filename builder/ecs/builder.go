@@ -132,14 +132,16 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 		})
 	if b.chooseNetworkType() == InstanceNetworkVpc {
 		steps = append(steps,
+			// 创建 VPC 或选择 VPC, 结果一定有且只有一个 VpcId
 			&stepConfigAlicloudVPC{
 				VpcId:     b.config.VpcId,
 				CidrBlock: b.config.CidrBlock,
 				VpcName:   b.config.VpcName,
 			},
+			// 创建 subnet 或者选择 subnet 列表, 结果一定有 (subnet, zone) 列表
 			&stepConfigAlicloudVSwitch{
-				VSwitchId:   b.config.VSwitchId,
-				ZoneId:      b.config.ZoneId,
+				VSwitchIds:  []string{b.config.VSwitchId},
+				ZoneIds:     []string{b.config.ZoneId},
 				CidrBlock:   b.config.CidrBlock,
 				VSwitchName: b.config.VSwitchName,
 			})
@@ -150,6 +152,7 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			SecurityGroupName: b.config.SecurityGroupName,
 			RegionId:          b.config.AlicloudRegion,
 		},
+		// 遍历 subnet 列表, 尝试创建机器，直到创建成功或最终失败
 		&stepCreateAlicloudInstance{
 			IOOptimized:                 b.config.IOOptimized,
 			InstanceType:                b.config.InstanceType,
@@ -161,7 +164,6 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			InternetChargeType:          b.config.InternetChargeType,
 			InternetMaxBandwidthOut:     b.config.InternetMaxBandwidthOut,
 			InstanceName:                b.config.InstanceName,
-			ZoneId:                      b.config.ZoneId,
 			SecurityEnhancementStrategy: b.config.SecurityEnhancementStrategy,
 			AlicloudImageFamily:         b.config.AlicloudImageFamily,
 		})

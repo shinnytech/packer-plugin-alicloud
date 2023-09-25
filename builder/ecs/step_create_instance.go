@@ -7,10 +7,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
+	"os"
 	"strconv"
 
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/errors"
 	"github.com/hashicorp/packer-plugin-sdk/uuid"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
@@ -32,7 +32,6 @@ type stepCreateAlicloudInstance struct {
 	InternetChargeType          string
 	InternetMaxBandwidthOut     int
 	InstanceName                string
-	ZoneId                      string
 	SecurityEnhancementStrategy string
 	AlicloudImageFamily         string
 	instance                    *ecs.Instance
@@ -51,104 +50,50 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 	ui := state.Get("ui").(packersdk.Ui)
 
 	ui.Say("Creating instance...")
-	createInstanceRequest, err := s.buildCreateInstanceRequest(state)
-	if err != nil {
-		return halt(state, err, "")
-	}
-
-	createInstanceResponse, err := client.WaitForExpected(&WaitForExpectArgs{
-		RequestFunc: func() (responses.AcsResponse, error) {
-			return client.CreateInstance(createInstanceRequest)
-		},
-		EvalFunc: client.EvalCouldRetryResponse(createInstanceRetryErrors, EvalRetryErrorType),
-	})
-
-	if err != nil {
-		// 根据错误码判断是否是库存不足的错误
-		// 如果是库存不足的错误，查询可用区后换区重试
-		e, ok := err.(errors.Error)
-		if ok && e.ErrorCode() == "OperationDenied.NoStock" {
-			config := state.Get("config").(*Config)
-			newReq := ecs.CreateDescribeAvailableResourceRequest()
-			newReq.RegionId = s.RegionId
-			newReq.NetworkCategory = "vpc"
-			newReq.InstanceChargeType = "PostPaid"
-			newReq.SystemDiskCategory = "cloud_essd"
-			newReq.InstanceType = s.InstanceType
-			newReq.IoOptimized = "optimized"
-			newReq.InstanceChargeType = "PostPaid"
-			newReq.ResourceType = "instance"
-			newReq.SpotStrategy = "NoSpot"
-			newReq.DestinationResource = "InstanceType"
-
-			describeResourceResponse, err := client.WaitForExpected(&WaitForExpectArgs{
-				RequestFunc: func() (responses.AcsResponse, error) {
-					return client.DescribeAvailableResource(newReq)
-				},
-				EvalFunc: client.EvalCouldRetryResponse(createInstanceRetryErrors, EvalRetryErrorType),
-			})
-			if err != nil {
-				return halt(state, err, "Error auto re-arrange instance zone")
-			}
-			for _, availableZone := range describeResourceResponse.(*ecs.DescribeAvailableResourceResponse).AvailableZones.AvailableZone {
-				if availableZone.Status == "Available" && availableZone.AvailableResources.AvailableResource[0].SupportedResources.SupportedResource[0].Status == "Available" {
-					s.ZoneId = availableZone.ZoneId
-					ui.Say(fmt.Sprintf("Instance type %s is not available in zone %s, try to use %s", s.InstanceType, config.ZoneId, s.ZoneId))
-					chooseVSwitch := stepConfigAlicloudVSwitch{
-						VSwitchId:   config.VSwitchId,
-						ZoneId:      s.ZoneId,
-						CidrBlock:   config.CidrBlock,
-						VSwitchName: config.VSwitchName,
-					}
-					// 目前采用预创建VSwitch的方式，所以无需考虑cleanup的问题
-					chooseVSwitch.Run(ctx, state)
-					reCreateInstance := stepCreateAlicloudInstance{
-						IOOptimized:                 config.IOOptimized,
-						InstanceType:                config.InstanceType,
-						UserData:                    config.UserData,
-						UserDataFile:                config.UserDataFile,
-						RamRoleName:                 config.RamRoleName,
-						Tags:                        config.RunTags,
-						RegionId:                    config.AlicloudRegion,
-						InternetChargeType:          config.InternetChargeType,
-						InternetMaxBandwidthOut:     config.InternetMaxBandwidthOut,
-						InstanceName:                config.InstanceName,
-						ZoneId:                      s.ZoneId,
-						SecurityEnhancementStrategy: config.SecurityEnhancementStrategy,
-						AlicloudImageFamily:         config.AlicloudImageFamily,
-					}
-					reCreateInstance.Run(ctx, state)
-					config.ZoneId = s.ZoneId
-					s.instance = state.Get("instance").(*ecs.Instance)
-					return multistep.ActionContinue
-				}
-			}
+	vSwitches := state.Get("vswitches").([]vpc.VSwitch)
+	for _, vSwitch := range vSwitches {
+		ui.Say(fmt.Sprintf("Try to create instance in zone: %s ...", vSwitch.ZoneId))
+		createInstanceRequest, err := s.buildCreateInstanceRequest(state, vSwitch)
+		if err != nil {
+			return halt(state, err, "")
 		}
-		return halt(state, err, "Error creating instance")
+
+		createInstanceResponse, err := client.WaitForExpected(&WaitForExpectArgs{
+			RequestFunc: func() (responses.AcsResponse, error) {
+				return client.CreateInstance(createInstanceRequest)
+			},
+			EvalFunc: client.EvalCouldRetryResponse(createInstanceRetryErrors, EvalRetryErrorType),
+		})
+
+		if err != nil {
+			return halt(state, err, "Error creating instance")
+		}
+
+		instanceId := createInstanceResponse.(*ecs.CreateInstanceResponse).InstanceId
+
+		_, err = client.WaitForInstanceStatus(s.RegionId, instanceId, InstanceStatusStopped)
+		if err != nil {
+			ui.Say(fmt.Sprintf("Error waiting create instance in zone: %s \n err: %v", vSwitch.ZoneId, err))
+			continue
+		}
+
+		describeInstancesRequest := ecs.CreateDescribeInstancesRequest()
+		describeInstancesRequest.InstanceIds = fmt.Sprintf("[\"%s\"]", instanceId)
+		instances, err := client.DescribeInstances(describeInstancesRequest)
+		if err != nil {
+			return halt(state, err, "")
+		}
+
+		ui.Message(fmt.Sprintf("Created instance: %s", instanceId))
+		s.instance = &instances.Instances.Instance[0]
+		state.Put("instance", s.instance)
+		// instance_id is the generic term used so that users can have access to the
+		// instance id inside of the provisioners, used in step_provision.
+		state.Put("instance_id", instanceId)
+
+		return multistep.ActionContinue
 	}
-
-	instanceId := createInstanceResponse.(*ecs.CreateInstanceResponse).InstanceId
-
-	_, err = client.WaitForInstanceStatus(s.RegionId, instanceId, InstanceStatusStopped)
-	if err != nil {
-		return halt(state, err, "Error waiting create instance")
-	}
-
-	describeInstancesRequest := ecs.CreateDescribeInstancesRequest()
-	describeInstancesRequest.InstanceIds = fmt.Sprintf("[\"%s\"]", instanceId)
-	instances, err := client.DescribeInstances(describeInstancesRequest)
-	if err != nil {
-		return halt(state, err, "")
-	}
-
-	ui.Message(fmt.Sprintf("Created instance: %s", instanceId))
-	s.instance = &instances.Instances.Instance[0]
-	state.Put("instance", s.instance)
-	// instance_id is the generic term used so that users can have access to the
-	// instance id inside of the provisioners, used in step_provision.
-	state.Put("instance_id", instanceId)
-
-	return multistep.ActionContinue
+	return halt(state, fmt.Errorf("Error creating instance"), "")
 }
 
 func (s *stepCreateAlicloudInstance) Cleanup(state multistep.StateBag) {
@@ -176,7 +121,7 @@ func (s *stepCreateAlicloudInstance) Cleanup(state multistep.StateBag) {
 	}
 }
 
-func (s *stepCreateAlicloudInstance) buildCreateInstanceRequest(state multistep.StateBag) (*ecs.CreateInstanceRequest, error) {
+func (s *stepCreateAlicloudInstance) buildCreateInstanceRequest(state multistep.StateBag, vSwitch vpc.VSwitch) (*ecs.CreateInstanceRequest, error) {
 	request := ecs.CreateCreateInstanceRequest()
 	request.ClientToken = uuid.TimeOrderedUUID()
 	request.RegionId = s.RegionId
@@ -184,7 +129,7 @@ func (s *stepCreateAlicloudInstance) buildCreateInstanceRequest(state multistep.
 	request.InstanceName = s.InstanceName
 	request.RamRoleName = s.RamRoleName
 	request.Tag = buildCreateInstanceTags(s.Tags)
-	request.ZoneId = s.ZoneId
+	request.ZoneId = vSwitch.ZoneId
 	request.SecurityEnhancementStrategy = s.SecurityEnhancementStrategy
 	if s.AlicloudImageFamily != "" {
 		request.ImageFamily = s.AlicloudImageFamily
@@ -197,10 +142,9 @@ func (s *stepCreateAlicloudInstance) buildCreateInstanceRequest(state multistep.
 
 	networkType := state.Get("networktype").(InstanceNetWork)
 	if networkType == InstanceNetworkVpc {
-		vswitchId := state.Get("vswitchid").(string)
-		request.VSwitchId = vswitchId
+		request.VSwitchId = vSwitch.VSwitchId
 
-		userData, err := s.getUserData(state)
+		userData, err := s.getUserData()
 		if err != nil {
 			return nil, err
 		}
@@ -259,11 +203,11 @@ func (s *stepCreateAlicloudInstance) buildCreateInstanceRequest(state multistep.
 	return request, nil
 }
 
-func (s *stepCreateAlicloudInstance) getUserData(state multistep.StateBag) (string, error) {
+func (s *stepCreateAlicloudInstance) getUserData() (string, error) {
 	userData := s.UserData
 
 	if s.UserDataFile != "" {
-		data, err := ioutil.ReadFile(s.UserDataFile)
+		data, err := os.ReadFile(s.UserDataFile)
 		if err != nil {
 			return "", err
 		}
