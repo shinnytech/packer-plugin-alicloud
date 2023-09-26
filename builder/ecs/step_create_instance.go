@@ -35,6 +35,7 @@ type stepCreateAlicloudInstance struct {
 	SecurityEnhancementStrategy string
 	AlicloudImageFamily         string
 	instance                    *ecs.Instance
+	instanceID                  string
 }
 
 var createInstanceRetryErrors = []string{
@@ -66,15 +67,16 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 		})
 
 		if err != nil {
-			return halt(state, err, "Error creating instance")
+			halt(state, err, "Error creating instance")
+			continue
 		}
 
 		instanceId := createInstanceResponse.(*ecs.CreateInstanceResponse).InstanceId
+		s.instanceID = instanceId
 
 		_, err = client.WaitForInstanceStatus(s.RegionId, instanceId, InstanceStatusStopped)
 		if err != nil {
-			ui.Say(fmt.Sprintf("Error waiting create instance in zone: %s \n err: %v", vSwitch.ZoneId, err))
-			continue
+			return halt(state, fmt.Errorf("zone: %s \n err: %v", vSwitch.ZoneId, err), "Error waiting created instance")
 		}
 
 		describeInstancesRequest := ecs.CreateDescribeInstancesRequest()
@@ -108,7 +110,7 @@ func (s *stepCreateAlicloudInstance) Cleanup(state multistep.StateBag) {
 	_, err := client.WaitForExpected(&WaitForExpectArgs{
 		RequestFunc: func() (responses.AcsResponse, error) {
 			request := ecs.CreateDeleteInstanceRequest()
-			request.InstanceId = s.instance.InstanceId
+			request.InstanceId = s.instanceID
 			request.Force = requests.NewBoolean(true)
 			return client.DeleteInstance(request)
 		},
