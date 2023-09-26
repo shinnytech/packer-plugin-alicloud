@@ -67,7 +67,8 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 		})
 
 		if err != nil {
-			halt(state, err, "Error creating instance")
+			// halt会记录error，影响最终执行status code。这里只需要提示
+			ui.Say(fmt.Sprintf("Error creating instance: %s", err))
 			continue
 		}
 
