@@ -144,6 +144,9 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 	vSwitchChildren := make([]vpc.VSwitch, 0)
 	vSwitchIds := make([]string, 0)
 	zoneId := s.ZoneIds[0]
+	defer func() {
+		s.VSwitchIds = vSwitchIds
+	}()
 
 	ui.Say("Try to create vsw in zone: " + zoneId)
 	createVSwitchRequest := vpc.CreateCreateVSwitchRequest()
@@ -184,7 +187,6 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 					if vSwitch.Status == VSwitchStatusAvailable {
 						vSwitchChildren = append(vSwitchChildren, vSwitch)
 						vSwitchIds = append(vSwitchIds, vSwitch.VSwitchId)
-						s.VSwitchIds = vSwitchIds // 保证销毁时可以获取到vswitch id
 						return WaitForExpectSuccess
 					}
 				}
