@@ -46,7 +46,7 @@ var deleteInstanceRetryErrors = []string{
 	"IncorrectInstanceStatus.Initializing",
 }
 
-func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
+func (s *stepCreateAlicloudInstance) Run(_ context.Context, state multistep.StateBag) multistep.StepAction {
 	client := state.Get("client").(*ClientWrapper)
 	ui := state.Get("ui").(packersdk.Ui)
 
@@ -96,7 +96,7 @@ func (s *stepCreateAlicloudInstance) Run(ctx context.Context, state multistep.St
 
 		return multistep.ActionContinue
 	}
-	return halt(state, fmt.Errorf("Error creating instance"), "")
+	return halt(state, fmt.Errorf("no instance available in all candidate zones"), "Error creating instance")
 }
 
 func (s *stepCreateAlicloudInstance) Cleanup(state multistep.StateBag) {
