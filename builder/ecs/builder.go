@@ -140,8 +140,8 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 			},
 			// 创建 subnet 或者选择 subnet 列表, 结果一定有 (subnet, zone) 列表
 			&stepConfigAlicloudVSwitch{
-				VSwitchIds:  []string{b.config.VSwitchId},
-				ZoneIds:     []string{b.config.ZoneId},
+				VSwitchId:   b.config.VSwitchId,
+				ZoneId:      b.config.ZoneId,
 				CidrBlock:   b.config.CidrBlock,
 				VSwitchName: b.config.VSwitchName,
 			})

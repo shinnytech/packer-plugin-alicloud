@@ -7,18 +7,17 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
 	"os"
 	"strconv"
-
-	"github.com/hashicorp/packer-plugin-sdk/uuid"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/responses"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
 	confighelper "github.com/hashicorp/packer-plugin-sdk/template/config"
+	"github.com/hashicorp/packer-plugin-sdk/uuid"
 )
 
 type stepCreateAlicloudInstance struct {
@@ -35,7 +34,6 @@ type stepCreateAlicloudInstance struct {
 	SecurityEnhancementStrategy string
 	AlicloudImageFamily         string
 	instance                    *ecs.Instance
-	instanceID                  string
 }
 
 var createInstanceRetryErrors = []string{
@@ -73,7 +71,6 @@ func (s *stepCreateAlicloudInstance) Run(_ context.Context, state multistep.Stat
 		}
 
 		instanceId := createInstanceResponse.(*ecs.CreateInstanceResponse).InstanceId
-		s.instanceID = instanceId
 
 		_, err = client.WaitForInstanceStatus(s.RegionId, instanceId, InstanceStatusStopped)
 		if err != nil {
@@ -111,7 +108,7 @@ func (s *stepCreateAlicloudInstance) Cleanup(state multistep.StateBag) {
 	_, err := client.WaitForExpected(&WaitForExpectArgs{
 		RequestFunc: func() (responses.AcsResponse, error) {
 			request := ecs.CreateDeleteInstanceRequest()
-			request.InstanceId = s.instanceID
+			request.InstanceId = s.instance.InstanceId
 			request.Force = requests.NewBoolean(true)
 			return client.DeleteInstance(request)
 		},
