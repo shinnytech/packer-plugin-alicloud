@@ -18,11 +18,11 @@ import (
 )
 
 type stepConfigAlicloudVSwitch struct {
-	VSwitchIds  []string
-	ZoneIds     []string
-	isCreate    bool
-	CidrBlock   string
-	VSwitchName string
+	VSwitchId      string
+	ZoneId         string
+	CidrBlock      string
+	VSwitchName    string
+	createdVSwitch *vpc.VSwitch
 }
 
 var createVSwitchRetryErrors = []string{
@@ -45,16 +45,13 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 	config := state.Get("config").(*Config)
 
 	// 指定交换机
-	if s.VSwitchIds[0] != "" {
-		if len(s.ZoneIds) != 1 {
-			halt(state, fmt.Errorf("指定vswitch_id必须指定唯一zone_id"), "")
-			return multistep.ActionHalt
-		}
+	if len(s.VSwitchId) > 0 {
+		// 查询交换机是否存在并获取详细信息
 		describeVSwitchesRequest := vpc.CreateDescribeVSwitchesRequest()
 		describeVSwitchesRequest.VpcId = vpcId
-		describeVSwitchesRequest.VSwitchId = s.VSwitchIds[0]
+		describeVSwitchesRequest.VSwitchId = s.VSwitchId
 		describeVSwitchesRequest.VSwitchName = s.VSwitchName
-		describeVSwitchesRequest.ZoneId = s.ZoneIds[0]
+		describeVSwitchesRequest.ZoneId = s.ZoneId
 
 		vswitchesResponse, err := vpcClient.DescribeVSwitches(describeVSwitchesRequest)
 		if err != nil {
@@ -62,18 +59,17 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 		}
 
 		vswitch := vswitchesResponse.VSwitches.VSwitch
-		if len(vswitch) > 0 {
+		if len(vswitch) == 1 {
 			state.Put("vswitches", vswitch)
-			s.isCreate = false
+			s.createdVSwitch = &vswitch[0]
 			return multistep.ActionContinue
 		}
-
-		s.isCreate = false
-		return halt(state, fmt.Errorf("the specified vswitch {%s} doesn't exist", s.VSwitchIds[0]), "")
+		return halt(state, fmt.Errorf("the specified vswitch {%s} doesn't exist", s.VSwitchId), "")
 	}
 
 	// 根据机型自动选择可用区
-	if s.ZoneIds[0] == "" {
+	zones := []string{s.ZoneId}
+	if len(s.ZoneId) == 0 {
 		ui.Say("Searching zones...")
 		availableResourceRequest := ecs.CreateDescribeAvailableResourceRequest()
 		availableResourceRequest.RegionId = config.AlicloudRegion
@@ -87,7 +83,7 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 			return halt(state, err, "Query for available instance zones failed")
 		}
 
-		zones := make([]string, 0)
+		zones = make([]string, 0)
 		for _, zone := range resourceResponse.AvailableZones.AvailableZone {
 			if zone.Status == "Available" &&
 				zone.AvailableResources.AvailableResource[0].SupportedResources.SupportedResource[0].Status == "Available" {
@@ -99,14 +95,12 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 			state.Put("error", fmt.Errorf("实例类型 %s 没有在售可用区", config.InstanceType))
 			return multistep.ActionHalt
 		}
-		s.ZoneIds = zones
-		ui.Say("Candidate zones are: " + strings.Join(s.ZoneIds, ", "))
+		ui.Say("Candidate zones are: " + strings.Join(zones, ", "))
 	}
 
 	// 根据机型自动选择可用区和交换机
 	if len(s.VSwitchName) != 0 {
 		ui.Say(fmt.Sprintf("Searching vswitches using name: %s ...", s.VSwitchName))
-		s.isCreate = false
 		// 搜索机型在售所有可用区内符合subnet名称的subnet
 		// 由于不可以指定可用区列表，因此需要遍历返回值然后进行过滤
 		describeVSwitchesRequest := vpc.CreateDescribeVSwitchesRequest()
@@ -122,7 +116,7 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 		if len(vSwitchCandidates) > 0 {
 			vSwitches := make([]vpc.VSwitch, 0)
 			for _, v := range vSwitchCandidates {
-				if slices.Contains(s.ZoneIds, v.ZoneId) {
+				if slices.Contains(zones, v.ZoneId) {
 					vSwitches = append(vSwitches, v)
 				}
 			}
@@ -139,74 +133,68 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 	}
 
 	ui.Say("Creating vswitch...")
-	// 由于cidr段无法有效指定多个，因此建立vsw只建立第一个可用区
-	s.isCreate = true
-	vSwitchChildren := make([]vpc.VSwitch, 0)
-	vSwitchIds := make([]string, 0)
-	zoneId := s.ZoneIds[0]
-	defer func() {
-		s.VSwitchIds = vSwitchIds
-	}()
+	// 由于cidr段无法有效指定多个，因此建立vsw只建立第一个成功的可用区
+	for _, zoneId := range zones {
+		ui.Say("Try to create vsw in zone: " + zoneId)
+		createVSwitchRequest := vpc.CreateCreateVSwitchRequest()
+		createVSwitchRequest.ClientToken = uuid.TimeOrderedUUID()
+		createVSwitchRequest.CidrBlock = s.CidrBlock
+		createVSwitchRequest.ZoneId = zoneId
+		createVSwitchRequest.VpcId = vpcId
+		createVSwitchRequest.VSwitchName = s.VSwitchName
+		createVSwitchResponse, err := client.WaitForExpected(&WaitForExpectArgs{
+			RequestFunc: func() (responses.AcsResponse, error) {
+				return vpcClient.CreateVSwitch(createVSwitchRequest)
+			},
+			EvalFunc: client.EvalCouldRetryResponse(createVSwitchRetryErrors, EvalRetryErrorType),
+		})
+		if err != nil {
+			return halt(state, err, "Error Creating vswitch")
+		}
 
-	ui.Say("Try to create vsw in zone: " + zoneId)
-	createVSwitchRequest := vpc.CreateCreateVSwitchRequest()
-	createVSwitchRequest.ClientToken = uuid.TimeOrderedUUID()
-	createVSwitchRequest.CidrBlock = s.CidrBlock
-	createVSwitchRequest.ZoneId = zoneId
-	createVSwitchRequest.VpcId = vpcId
-	createVSwitchRequest.VSwitchName = s.VSwitchName
-	createVSwitchResponse, err := client.WaitForExpected(&WaitForExpectArgs{
-		RequestFunc: func() (responses.AcsResponse, error) {
-			return vpcClient.CreateVSwitch(createVSwitchRequest)
-		},
-		EvalFunc: client.EvalCouldRetryResponse(createVSwitchRetryErrors, EvalRetryErrorType),
-	})
-	if err != nil {
-		return halt(state, err, "Error Creating vswitch")
-	}
+		vSwitchId := createVSwitchResponse.(*vpc.CreateVSwitchResponse).VSwitchId
 
-	vSwitchId := createVSwitchResponse.(*vpc.CreateVSwitchResponse).VSwitchId
+		describeVSwitchesRequest := vpc.CreateDescribeVSwitchesRequest()
+		describeVSwitchesRequest.VpcId = vpcId
+		describeVSwitchesRequest.VSwitchId = vSwitchId
 
-	describeVSwitchesRequest := vpc.CreateDescribeVSwitchesRequest()
-	describeVSwitchesRequest.VpcId = vpcId
-	describeVSwitchesRequest.VSwitchId = vSwitchId
+		_, err = client.WaitForExpected(&WaitForExpectArgs{
+			RequestFunc: func() (responses.AcsResponse, error) {
+				return vpcClient.DescribeVSwitches(describeVSwitchesRequest)
+			},
+			EvalFunc: func(response responses.AcsResponse, err error) WaitForExpectEvalResult {
+				if err != nil {
+					return WaitForExpectToRetry
+				}
 
-	_, err = client.WaitForExpected(&WaitForExpectArgs{
-		RequestFunc: func() (responses.AcsResponse, error) {
-			return vpcClient.DescribeVSwitches(describeVSwitchesRequest)
-		},
-		EvalFunc: func(response responses.AcsResponse, err error) WaitForExpectEvalResult {
-			if err != nil {
-				return WaitForExpectToRetry
-			}
-
-			vSwitchesResponse := response.(*vpc.DescribeVSwitchesResponse)
-			vSwitches := vSwitchesResponse.VSwitches.VSwitch
-			if len(vSwitches) > 0 {
-				for _, vSwitch := range vSwitches {
-					if vSwitch.Status == VSwitchStatusAvailable {
-						vSwitchChildren = append(vSwitchChildren, vSwitch)
-						vSwitchIds = append(vSwitchIds, vSwitch.VSwitchId)
-						return WaitForExpectSuccess
+				vSwitchesResponse := response.(*vpc.DescribeVSwitchesResponse)
+				vSwitches := vSwitchesResponse.VSwitches.VSwitch
+				if len(vSwitches) > 0 {
+					for _, vSwitch := range vSwitches {
+						if vSwitch.Status == VSwitchStatusAvailable {
+							s.createdVSwitch = &vSwitch
+							return WaitForExpectSuccess
+						}
 					}
 				}
-			}
-			return WaitForExpectToRetry
-		},
-		RetryTimes: shortRetryTimes,
-	})
+				return WaitForExpectToRetry
+			},
+			RetryTimes: shortRetryTimes,
+		})
 
-	if err != nil {
-		return halt(state, err, "Timeout waiting for vswitch to become available")
+		if err != nil {
+			return halt(state, err, "Timeout waiting for vswitch to become available")
+		}
+		ui.Message(fmt.Sprintf("Created vswitch: %s", vSwitchId))
+
+		state.Put("vswitches", []vpc.VSwitch{*s.createdVSwitch})
+		return multistep.ActionContinue
 	}
-	ui.Message(fmt.Sprintf("Created vswitch: %s", vSwitchId))
-
-	state.Put("vswitches", vSwitchChildren)
-	return multistep.ActionContinue
+	return halt(state, fmt.Errorf("no vswitch created successfully in all candidate zones"), "Error creating vswitch")
 }
 
 func (s *stepConfigAlicloudVSwitch) Cleanup(state multistep.StateBag) {
-	if !s.isCreate {
+	if s.createdVSwitch == nil {
 		return
 	}
 
@@ -215,22 +203,18 @@ func (s *stepConfigAlicloudVSwitch) Cleanup(state multistep.StateBag) {
 	client := state.Get("client").(*ClientWrapper)
 	ui := state.Get("ui").(packersdk.Ui)
 
-	for _, id := range s.VSwitchIds {
-		if len(id) == 0 {
-			continue
-		}
-		_, err := client.WaitForExpected(&WaitForExpectArgs{
-			RequestFunc: func() (responses.AcsResponse, error) {
-				request := ecs.CreateDeleteVSwitchRequest()
-				request.VSwitchId = id
-				return client.DeleteVSwitch(request)
-			},
-			EvalFunc:   client.EvalCouldRetryResponse(deleteVSwitchRetryErrors, EvalRetryErrorType),
-			RetryTimes: shortRetryTimes,
-		})
+	_, err := client.WaitForExpected(&WaitForExpectArgs{
+		RequestFunc: func() (responses.AcsResponse, error) {
+			request := ecs.CreateDeleteVSwitchRequest()
+			request.VSwitchId = s.createdVSwitch.VSwitchId
+			return client.DeleteVSwitch(request)
+		},
+		EvalFunc:   client.EvalCouldRetryResponse(deleteVSwitchRetryErrors, EvalRetryErrorType),
+		RetryTimes: shortRetryTimes,
+	})
 
-		if err != nil {
-			ui.Error(fmt.Sprintf("Error deleting vswitch, it may still be around: %s", err))
-		}
+	if err != nil {
+		ui.Error(fmt.Sprintf("Error deleting vswitch, it may still be around: %s", err))
 	}
+
 }
