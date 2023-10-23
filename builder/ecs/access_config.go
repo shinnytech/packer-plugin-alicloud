@@ -13,10 +13,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
-
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/endpoints"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
 	"github.com/hashicorp/packer-plugin-alicloud/version"
 	"github.com/hashicorp/packer-plugin-sdk/template/interpolate"
 	"github.com/mitchellh/go-homedir"
@@ -127,47 +126,18 @@ func (c *AlicloudAccessConfig) Client() (*ClientWrapper, error) {
 	return c.client, nil
 }
 
-// Client for AliVPCClient
+// VPCClient for AliVPCClient
 func (c *AlicloudAccessConfig) VPCClient() (*VPCClientWrapper, error) {
-	var client *vpc.Client
-	var err error
 	if c.vpcClient != nil {
 		return c.vpcClient, nil
 	}
-	if c.SecurityToken == "" {
-		c.SecurityToken = os.Getenv("SECURITY_TOKEN")
+
+	_, err := c.Client()
+	if err != nil {
+		return nil, err
 	}
 
-	var getProviderConfig = func(str string, key string) string {
-		value, err := getConfigFromProfile(c, key)
-		if err == nil && value != nil {
-			str = value.(string)
-		}
-		return str
-	}
-
-	c.AlicloudRegion = getProviderConfig(c.AlicloudRegion, "region_id")
-	c.SecurityToken = getProviderConfig(c.SecurityToken, "sts_token")
-	c.CustomEndpointEcs = getProviderConfig(c.CustomEndpointEcs, "endpoint")
-
-	if c.CustomEndpointEcs != "" && c.AlicloudRegion != "" {
-		_ = endpoints.AddEndpointMapping(c.AlicloudRegion, "Ecs", c.CustomEndpointEcs)
-	}
-
-	if c.AlicloudRamRole == "" {
-		c.AlicloudRamRole = getProviderConfig(c.AlicloudRamRole, "ram_role_name")
-	}
-
-	if c.AlicloudAccessKey == "" || c.AlicloudSecretKey == "" {
-		c.AlicloudAccessKey = getProviderConfig(c.AlicloudAccessKey, "access_key_id")
-		c.AlicloudSecretKey = getProviderConfig(c.AlicloudSecretKey, "access_key_secret")
-	}
-
-	if c.AlicloudRamRoleArn == "" || c.AlicloudRamSessionName == "" {
-		c.AlicloudRamRoleArn = getProviderConfig(c.AlicloudRamRole, "ram_role_arn")
-		c.AlicloudRamSessionName = getProviderConfig(c.AlicloudRamSessionName, "ram_session_name")
-	}
-
+	var client *vpc.Client
 	if c.AlicloudRamRole != "" {
 		client, err = vpc.NewClientWithEcsRamRole(c.AlicloudRegion, c.AlicloudRamRole)
 	} else if c.AlicloudRamRoleArn != "" && c.AlicloudRamSessionName != "" {
