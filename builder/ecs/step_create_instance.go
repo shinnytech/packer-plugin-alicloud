@@ -33,7 +33,7 @@ type stepCreateAlicloudInstance struct {
 	InstanceName                string
 	SecurityEnhancementStrategy string
 	AlicloudImageFamily         string
-	instance                    *ecs.Instance
+	createdInstanceId           string
 }
 
 var createInstanceRetryErrors = []string{
@@ -70,26 +70,26 @@ func (s *stepCreateAlicloudInstance) Run(_ context.Context, state multistep.Stat
 			continue
 		}
 
-		instanceId := createInstanceResponse.(*ecs.CreateInstanceResponse).InstanceId
+		s.createdInstanceId = createInstanceResponse.(*ecs.CreateInstanceResponse).InstanceId
 
-		_, err = client.WaitForInstanceStatus(s.RegionId, instanceId, InstanceStatusStopped)
+		_, err = client.WaitForInstanceStatus(s.RegionId, s.createdInstanceId, InstanceStatusStopped)
 		if err != nil {
 			return halt(state, fmt.Errorf("zone: %s \n err: %v", vSwitch.ZoneId, err), "Error waiting created instance")
 		}
 
 		describeInstancesRequest := ecs.CreateDescribeInstancesRequest()
-		describeInstancesRequest.InstanceIds = fmt.Sprintf("[\"%s\"]", instanceId)
+		describeInstancesRequest.InstanceIds = fmt.Sprintf("[\"%s\"]", s.createdInstanceId)
 		instances, err := client.DescribeInstances(describeInstancesRequest)
 		if err != nil {
 			return halt(state, err, "")
 		}
 
-		ui.Message(fmt.Sprintf("Created instance: %s", instanceId))
-		s.instance = &instances.Instances.Instance[0]
-		state.Put("instance", s.instance)
+		ui.Message(fmt.Sprintf("Created instance: %s", s.createdInstanceId))
+		instance := &instances.Instances.Instance[0]
+		state.Put("instance", instance)
 		// instance_id is the generic term used so that users can have access to the
 		// instance id inside of the provisioners, used in step_provision.
-		state.Put("instance_id", instanceId)
+		state.Put("instance_id", s.createdInstanceId)
 
 		return multistep.ActionContinue
 	}
@@ -97,7 +97,7 @@ func (s *stepCreateAlicloudInstance) Run(_ context.Context, state multistep.Stat
 }
 
 func (s *stepCreateAlicloudInstance) Cleanup(state multistep.StateBag) {
-	if s.instance == nil {
+	if len(s.createdInstanceId) == 0 {
 		return
 	}
 	cleanUpMessage(state, "instance")
@@ -108,7 +108,7 @@ func (s *stepCreateAlicloudInstance) Cleanup(state multistep.StateBag) {
 	_, err := client.WaitForExpected(&WaitForExpectArgs{
 		RequestFunc: func() (responses.AcsResponse, error) {
 			request := ecs.CreateDeleteInstanceRequest()
-			request.InstanceId = s.instance.InstanceId
+			request.InstanceId = s.createdInstanceId
 			request.Force = requests.NewBoolean(true)
 			return client.DeleteInstance(request)
 		},
@@ -117,7 +117,7 @@ func (s *stepCreateAlicloudInstance) Cleanup(state multistep.StateBag) {
 	})
 
 	if err != nil {
-		ui.Say(fmt.Sprintf("Failed to clean up instance %s: %s", s.instance.InstanceId, err))
+		ui.Say(fmt.Sprintf("Failed to clean up instance %s: %s", s.createdInstanceId, err))
 	}
 }
 
