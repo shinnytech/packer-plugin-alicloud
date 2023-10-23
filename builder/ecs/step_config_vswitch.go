@@ -18,11 +18,11 @@ import (
 )
 
 type stepConfigAlicloudVSwitch struct {
-	VSwitchId      string
-	ZoneId         string
-	CidrBlock      string
-	VSwitchName    string
-	createdVSwitch *vpc.VSwitch
+	VSwitchId        string
+	ZoneId           string
+	CidrBlock        string
+	VSwitchName      string
+	createdVSwitchId string
 }
 
 var createVSwitchRetryErrors = []string{
@@ -61,7 +61,6 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 		vswitch := vswitchesResponse.VSwitches.VSwitch
 		if len(vswitch) == 1 {
 			state.Put("vswitches", vswitch)
-			s.createdVSwitch = &vswitch[0]
 			return multistep.ActionContinue
 		}
 		return halt(state, fmt.Errorf("the specified vswitch {%s} doesn't exist", s.VSwitchId), "")
@@ -121,11 +120,10 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 				}
 			}
 			state.Put("vswitches", vSwitches)
-
 			return multistep.ActionContinue
 		}
 
-		return halt(state, fmt.Errorf("The specified vswitch {%s} doesn't exist.", s.VSwitchName), "")
+		return halt(state, fmt.Errorf("the specified vswitch {%s} doesn't exist", s.VSwitchName), "")
 	}
 
 	if config.CidrBlock == "" {
@@ -149,15 +147,17 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 			EvalFunc: client.EvalCouldRetryResponse(createVSwitchRetryErrors, EvalRetryErrorType),
 		})
 		if err != nil {
-			return halt(state, err, "Error Creating vswitch")
+			ui.Say("Error creating vswitch: " + err.Error())
+			continue
 		}
 
-		vSwitchId := createVSwitchResponse.(*vpc.CreateVSwitchResponse).VSwitchId
+		s.createdVSwitchId = createVSwitchResponse.(*vpc.CreateVSwitchResponse).VSwitchId
 
 		describeVSwitchesRequest := vpc.CreateDescribeVSwitchesRequest()
 		describeVSwitchesRequest.VpcId = vpcId
-		describeVSwitchesRequest.VSwitchId = vSwitchId
+		describeVSwitchesRequest.VSwitchId = s.createdVSwitchId
 
+		var vswitch vpc.VSwitch
 		_, err = client.WaitForExpected(&WaitForExpectArgs{
 			RequestFunc: func() (responses.AcsResponse, error) {
 				return vpcClient.DescribeVSwitches(describeVSwitchesRequest)
@@ -172,7 +172,7 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 				if len(vSwitches) > 0 {
 					for _, vSwitch := range vSwitches {
 						if vSwitch.Status == VSwitchStatusAvailable {
-							s.createdVSwitch = &vSwitch
+							vswitch = vSwitch
 							return WaitForExpectSuccess
 						}
 					}
@@ -185,16 +185,16 @@ func (s *stepConfigAlicloudVSwitch) Run(ctx context.Context, state multistep.Sta
 		if err != nil {
 			return halt(state, err, "Timeout waiting for vswitch to become available")
 		}
-		ui.Message(fmt.Sprintf("Created vswitch: %s", vSwitchId))
+		ui.Message(fmt.Sprintf("Created vswitch: %s", s.createdVSwitchId))
 
-		state.Put("vswitches", []vpc.VSwitch{*s.createdVSwitch})
+		state.Put("vswitches", []vpc.VSwitch{vswitch})
 		return multistep.ActionContinue
 	}
 	return halt(state, fmt.Errorf("no vswitch created successfully in all candidate zones"), "Error creating vswitch")
 }
 
 func (s *stepConfigAlicloudVSwitch) Cleanup(state multistep.StateBag) {
-	if s.createdVSwitch == nil {
+	if len(s.createdVSwitchId) == 0 {
 		return
 	}
 
@@ -206,7 +206,7 @@ func (s *stepConfigAlicloudVSwitch) Cleanup(state multistep.StateBag) {
 	_, err := client.WaitForExpected(&WaitForExpectArgs{
 		RequestFunc: func() (responses.AcsResponse, error) {
 			request := ecs.CreateDeleteVSwitchRequest()
-			request.VSwitchId = s.createdVSwitch.VSwitchId
+			request.VSwitchId = s.createdVSwitchId
 			return client.DeleteVSwitch(request)
 		},
 		EvalFunc:   client.EvalCouldRetryResponse(deleteVSwitchRetryErrors, EvalRetryErrorType),
