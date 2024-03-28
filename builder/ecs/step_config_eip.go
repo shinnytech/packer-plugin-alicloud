@@ -23,6 +23,7 @@ type stepConfigAlicloudEIP struct {
 	InternetMaxBandwidthOut  int
 	allocatedId              string
 	SSHPrivateIp             bool
+	associatedId             string
 }
 
 var allocateEipAddressRetryErrors = []string{
@@ -78,6 +79,7 @@ func (s *stepConfigAlicloudEIP) Run(ctx context.Context, state multistep.StateBa
 		if err != nil {
 			return halt(state, err, "Error wait eip associated timeout")
 		}
+		s.associatedId = instance.InstanceId
 	}
 
 	if s.SSHPrivateIp {
@@ -122,15 +124,18 @@ func (s *stepConfigAlicloudEIP) Cleanup(state multistep.StateBag) {
 	instance := state.Get("instance").(*ecs.Instance)
 	ui := state.Get("ui").(packersdk.Ui)
 
-	unassociateEipAddressRequest := ecs.CreateUnassociateEipAddressRequest()
-	unassociateEipAddressRequest.AllocationId = s.allocatedId
-	unassociateEipAddressRequest.InstanceId = instance.InstanceId
-	if _, err := client.UnassociateEipAddress(unassociateEipAddressRequest); err != nil {
-		ui.Say(fmt.Sprintf("Failed to unassociate eip: %s", err))
-	}
+	// 分配了EIP但未成功关联，不需要解绑实例
+	if len(s.associatedId) > 0 {
+		unassociateEipAddressRequest := ecs.CreateUnassociateEipAddressRequest()
+		unassociateEipAddressRequest.AllocationId = s.allocatedId
+		unassociateEipAddressRequest.InstanceId = instance.InstanceId
+		if _, err := client.UnassociateEipAddress(unassociateEipAddressRequest); err != nil {
+			ui.Say(fmt.Sprintf("Failed to unassociate eip: %s", err))
+		}
 
-	if err := s.waitForEipStatus(client, instance.RegionId, s.allocatedId, EipStatusAvailable); err != nil {
-		ui.Say(fmt.Sprintf("Timeout while unassociating eip: %s", err))
+		if err := s.waitForEipStatus(client, instance.RegionId, s.allocatedId, EipStatusAvailable); err != nil {
+			ui.Say(fmt.Sprintf("Timeout while unassociating eip: %s", err))
+		}
 	}
 
 	releaseEipAddressRequest := ecs.CreateReleaseEipAddressRequest()
