@@ -127,6 +127,7 @@ type FlatConfig struct {
 	WinRMUseNTLM                      *bool                        `mapstructure:"winrm_use_ntlm" cty:"winrm_use_ntlm" hcl:"winrm_use_ntlm"`
 	SSHPrivateIp                      *bool                        `mapstructure:"ssh_private_ip" required:"false" cty:"ssh_private_ip" hcl:"ssh_private_ip"`
 	SkipCreateImage                   *bool                        `mapstructure:"skip_create_image" required:"false" cty:"skip_create_image" hcl:"skip_create_image"`
+	DeploymentSetId                   *string                      `mapstructure:"deployment_set_id" required:"false" cty:"deployment_set_id" hcl:"deployment_set_id"`
 	OSSBucket                         *string                      `mapstructure:"oss_bucket_name" required:"true" cty:"oss_bucket_name" hcl:"oss_bucket_name"`
 	OSSKey                            *string                      `mapstructure:"oss_key_name" cty:"oss_key_name" hcl:"oss_key_name"`
 	SkipClean                         *bool                        `mapstructure:"skip_clean" cty:"skip_clean" hcl:"skip_clean"`
@@ -264,6 +265,7 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"winrm_use_ntlm":                   &hcldec.AttrSpec{Name: "winrm_use_ntlm", Type: cty.Bool, Required: false},
 		"ssh_private_ip":                   &hcldec.AttrSpec{Name: "ssh_private_ip", Type: cty.Bool, Required: false},
 		"skip_create_image":                &hcldec.AttrSpec{Name: "skip_create_image", Type: cty.Bool, Required: false},
+		"deployment_set_id":                &hcldec.AttrSpec{Name: "deployment_set_id", Type: cty.String, Required: false},
 		"oss_bucket_name":                  &hcldec.AttrSpec{Name: "oss_bucket_name", Type: cty.String, Required: false},
 		"oss_key_name":                     &hcldec.AttrSpec{Name: "oss_key_name", Type: cty.String, Required: false},
 		"skip_clean":                       &hcldec.AttrSpec{Name: "skip_clean", Type: cty.Bool, Required: false},

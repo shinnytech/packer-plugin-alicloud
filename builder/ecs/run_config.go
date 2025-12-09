@@ -138,8 +138,10 @@ type RunConfig struct {
 	// the ECS created through private ip instead of allocating a public ip or an
 	// EIP. The default value is false.
 	SSHPrivateIp bool `mapstructure:"ssh_private_ip" required:"false"`
-	//If true, Packer will not create a final image. Defaults to `false`.
+	// If true, Packer will not create a final image. Defaults to `false`.
 	SkipCreateImage bool `mapstructure:"skip_create_image" required:"false"`
+	// Deployment set ID. The default value is blank which means no deployment set.
+	DeploymentSetId string `mapstructure:"deployment_set_id" required:"false"`
 }
 
 func (c *RunConfig) Prepare(ctx *interpolate.Context) []error {

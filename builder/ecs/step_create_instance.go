@@ -33,6 +33,7 @@ type stepCreateAlicloudInstance struct {
 	InstanceName                string
 	SecurityEnhancementStrategy string
 	AlicloudImageFamily         string
+	DeploymentSetId             string
 	createdInstanceId           string
 }
 
@@ -131,6 +132,9 @@ func (s *stepCreateAlicloudInstance) buildCreateInstanceRequest(state multistep.
 	request.Tag = buildCreateInstanceTags(s.Tags)
 	request.ZoneId = vSwitch.ZoneId
 	request.SecurityEnhancementStrategy = s.SecurityEnhancementStrategy
+	if s.DeploymentSetId != "" {
+		request.DeploymentSetId = s.DeploymentSetId
+	}
 	if s.AlicloudImageFamily != "" {
 		request.ImageFamily = s.AlicloudImageFamily
 	} else {

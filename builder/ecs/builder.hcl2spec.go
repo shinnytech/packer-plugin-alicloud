@@ -163,6 +163,7 @@ type FlatConfig struct {
 	WinRMUseNTLM                      *bool                    `mapstructure:"winrm_use_ntlm" cty:"winrm_use_ntlm" hcl:"winrm_use_ntlm"`
 	SSHPrivateIp                      *bool                    `mapstructure:"ssh_private_ip" required:"false" cty:"ssh_private_ip" hcl:"ssh_private_ip"`
 	SkipCreateImage                   *bool                    `mapstructure:"skip_create_image" required:"false" cty:"skip_create_image" hcl:"skip_create_image"`
+	DeploymentSetId                   *string                  `mapstructure:"deployment_set_id" required:"false" cty:"deployment_set_id" hcl:"deployment_set_id"`
 }
 
 // FlatMapstructure returns a new FlatConfig.
@@ -292,6 +293,7 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"winrm_use_ntlm":                   &hcldec.AttrSpec{Name: "winrm_use_ntlm", Type: cty.Bool, Required: false},
 		"ssh_private_ip":                   &hcldec.AttrSpec{Name: "ssh_private_ip", Type: cty.Bool, Required: false},
 		"skip_create_image":                &hcldec.AttrSpec{Name: "skip_create_image", Type: cty.Bool, Required: false},
+		"deployment_set_id":                &hcldec.AttrSpec{Name: "deployment_set_id", Type: cty.String, Required: false},
 	}
 	return s
 }
